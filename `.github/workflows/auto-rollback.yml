@@ -26,7 +26,8 @@ jobs:
       - name: Check website health
         id: health
         run: |
-          if curl -fsSL https://main.digumu4vguf7o.amplifyapp.com/ -o page.html && grep -q 'DEPLOYMENT_OK' page.html; then
+          if curl -fsSL https://main.digumu4vguf7o.amplifyapp.com/ -o page.html &&
+             grep -q 'DEPLOYMENT_OK' page.html; then
             echo "healthy=true" >> "$GITHUB_OUTPUT"
           else
             echo "healthy=false" >> "$GITHUB_OUTPUT"
@@ -34,6 +35,8 @@ jobs:
 
       - name: Roll back failed deployment
         if: steps.health.outputs.healthy == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
