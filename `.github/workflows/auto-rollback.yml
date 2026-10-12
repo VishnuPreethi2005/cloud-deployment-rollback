@@ -1,0 +1,43 @@
+name: Automatic Rollback
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'index.html'
+
+permissions:
+  contents: write
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Wait for Amplify deployment
+        run: sleep 120
+
+      - name: Check website health
+        id: health
+        run: |
+          if curl -fsSL https://main.digumu4vguf7o.amplifyapp.com/ -o page.html && grep -q 'DEPLOYMENT_OK' page.html; then
+            echo "healthy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "healthy=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Roll back failed deployment
+        if: steps.health.outputs.healthy == 'false'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout -B main origin/main
+          git revert --no-edit "$GITHUB_SHA"
+          git push origin main
