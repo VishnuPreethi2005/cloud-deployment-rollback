@@ -1,6 +1,8 @@
+
 name: Automatic Rollback
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
