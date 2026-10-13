@@ -1,0 +1,68 @@
+name: Automatic Rollback
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetches full history so we can look back at previous commits
+
+      - name: Wait for deployment and check health
+        id: health
+        run: |
+          URL="https://amplifyapp.com"
+          for i in $(seq 1 36); do
+            echo "Checking deployment status (Attempt $i)..."
+            if curl -fsSL "$URL" -o page.html && grep -q 'DEPLOYMENT_OK' page.html; then
+              echo "healthy=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "healthy=false" >> "$GITHUB_OUTPUT"
+          exit 1
+
+      # This step resets the main branch pointer to the exact previous commit
+      - name: Roll back to previous commit
+        if: always() && steps.health.outputs.healthy == 'false' && github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@://github.com"
+          
+          echo "Health check failed. Fetching updates..."
+          git fetch origin main
+          
+          # 1. Store the name of the workflow file we want to protect
+          WORKFLOW_FILE=".github/workflows/auto-rollback.yml"
+          
+          # 2. Backup the workflow file content from the current workspace memory
+          if [ -f "$WORKFLOW_FILE" ]; then
+            cp "$WORKFLOW_FILE" /tmp/auto-rollback.yml.bak
+          fi
+          
+          # 3. Hard reset the repository to the absolute previous commit (HEAD~1)
+          git reset --hard HEAD~1
+          
+          # 4. Restore the workflow file back into the project directory
+          if [ -f /tmp/auto-rollback.yml.bak ]; then
+            mkdir -p .github/workflows
+            cp /tmp/auto-rollback.yml.bak "$WORKFLOW_FILE"
+            git add "$WORKFLOW_FILE"
+            git commit --amend --no-edit # Blends the restored file into the historical commit
+          fi
+          
+          # 5. Force push the clean previous version state back up to GitHub
+          git push origin main --force
